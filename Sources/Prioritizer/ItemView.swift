@@ -5,13 +5,14 @@ struct ItemView: View {
     let matrixSize: CGSize
     @EnvironmentObject var store: ItemStore
 
-    @State private var dragOffset: CGSize = .zero
-    @State private var isDragging = false
+    @GestureState private var dragOffset: CGSize? = nil
     @State private var showingEdit = false
     @State private var now = Date()
 
     // Tick every 60 seconds so faces update as time passes.
     private let ticker = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
+
+    private var isDragging: Bool { dragOffset != nil }
 
     var body: some View {
         HStack(spacing: 4) {
@@ -34,27 +35,12 @@ struct ItemView: View {
             RoundedRectangle(cornerRadius: 4)
                 .fill(Color(nsColor: .windowBackgroundColor).opacity(isDragging ? 0.9 : 0))
         )
+        .contentShape(Rectangle())
         .onReceive(ticker) { now = $0 }
-        .shadow(radius: isDragging ? 2 : 0)
-        .zIndex(isDragging ? 10 : 0)
-        .offset(dragOffset)
         .popover(isPresented: $showingEdit, arrowEdge: .bottom) {
             EditItemView(item: item, store: store, isPresented: $showingEdit)
         }
-        .gesture(
-            DragGesture(minimumDistance: 4)
-                .onChanged { value in
-                    isDragging = true
-                    dragOffset = value.translation
-                }
-                .onEnded { value in
-                    let newX = (item.x * matrixSize.width + value.translation.width) / matrixSize.width
-                    let newY = (item.y * matrixSize.height + value.translation.height) / matrixSize.height
-                    store.updatePosition(id: item.id, x: newX, y: newY)
-                    dragOffset = .zero
-                    isDragging = false
-                }
-        )
+        .highPriorityGesture(dragGesture)
         .contextMenu {
             Button {
                 showingEdit = true
@@ -68,6 +54,24 @@ struct ItemView: View {
                 Label("Delete", systemImage: "trash")
             }
         }
+        .shadow(radius: isDragging ? 2 : 0)
+        .offset(dragOffset ?? .zero)
+        .position(x: item.x * matrixSize.width, y: item.y * matrixSize.height)
+        .zIndex(isDragging ? 10 : 0)
+    }
+
+    private var dragGesture: some Gesture {
+        // Measure movement in the popover so the coordinates stay fixed as the item moves.
+        DragGesture(minimumDistance: 4, coordinateSpace: .named("popover"))
+            .updating($dragOffset) { value, offset, _ in
+                offset = value.translation
+            }
+            .onEnded { value in
+                guard matrixSize.width > 0, matrixSize.height > 0 else { return }
+                let newX = item.x + value.translation.width / matrixSize.width
+                let newY = item.y + value.translation.height / matrixSize.height
+                store.updatePosition(id: item.id, x: newX, y: newY)
+            }
     }
 }
 

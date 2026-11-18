@@ -171,10 +171,6 @@ struct MatrixView: View {
 
                 ForEach(store.items) { item in
                     ItemView(item: item, matrixSize: size)
-                        .position(
-                            x: item.x * size.width,
-                            y: item.y * size.height
-                        )
                 }
 
                 // Highlight when dragging an idea over the matrix
