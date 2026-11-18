@@ -4,7 +4,7 @@ import SwiftUI
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
-    private var singleClickTimer: Timer?
+    private var lastLeftClick: TimeInterval?
     private let store = ItemStore()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -14,6 +14,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             button.image = NSImage(systemSymbolName: "square.grid.2x2", accessibilityDescription: "Priority Matrix")
             button.action = #selector(statusItemClicked(_:))
             button.target = self
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
 
         let contentView = MatrixView()
@@ -28,35 +29,33 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func statusItemClicked(_ button: NSStatusBarButton) {
-        singleClickTimer?.invalidate()
-        singleClickTimer = nil
-
-        guard let event = NSApp.currentEvent,
-              event.type == .leftMouseDown || event.type == .leftMouseUp else {
+        guard let event = NSApp.currentEvent else {
+            lastLeftClick = nil
             togglePopover()
             return
         }
 
-        if event.clickCount >= 2 {
+        switch event.type {
+        case .rightMouseDown, .rightMouseUp:
             showQuitMenu(from: button)
-        } else {
-            // Wait for the system's double-click interval before opening the matrix.
-            singleClickTimer = Timer.scheduledTimer(
-                timeInterval: NSEvent.doubleClickInterval,
-                target: self,
-                selector: #selector(handleSingleClick(_:)),
-                userInfo: nil,
-                repeats: false
-            )
+        case .leftMouseDown, .leftMouseUp:
+            let isDoubleClick = lastLeftClick.map { previousClick in
+                (0...NSEvent.doubleClickInterval).contains(event.timestamp - previousClick)
+            } ?? false
+            if event.modifierFlags.contains(.control) || isDoubleClick {
+                showQuitMenu(from: button)
+            } else {
+                lastLeftClick = event.timestamp
+                togglePopover()
+            }
+        default:
+            lastLeftClick = nil
+            togglePopover()
         }
     }
 
-    @objc private func handleSingleClick(_ timer: Timer) {
-        singleClickTimer = nil
-        togglePopover()
-    }
-
     private func showQuitMenu(from button: NSStatusBarButton) {
+        lastLeftClick = nil
         popover.performClose(button)
 
         let menu = NSMenu()
@@ -67,8 +66,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
         quit.target = NSApp
 
-        let bottom = button.isFlipped ? button.bounds.maxY : button.bounds.minY
-        menu.popUp(positioning: nil, at: NSPoint(x: button.bounds.minX, y: bottom), in: button)
+        statusItem.menu = menu
+        button.performClick(nil)
+        statusItem.menu = nil
     }
 
     private func togglePopover() {
